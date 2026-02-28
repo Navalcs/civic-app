@@ -26,11 +26,12 @@ import { Input } from '../../components/Input';
 import { Ionicons } from '@expo/vector-icons';
 import { generateDescription } from '../../utils/gemini';
 import { openCivicEmail } from '../../utils/email';
+import { detectImageCategory, DetectionResult, VALID_CATEGORIES } from '../../utils/imageCategoryDetector';
 
 // Workaround for React 18 + expo-camera type incompatibility
 const CameraView = RNCameraView as unknown as React.ComponentClass<CameraViewProps>;
 
-const CATEGORIES = ['Pothole', 'Garbage', 'Water Leakage', 'Streetlight', 'Others'];
+const CATEGORIES = [...VALID_CATEGORIES];
 
 export default function ReportIssueScreen({ navigation }: any) {
     const { user } = useAuth();
@@ -59,6 +60,10 @@ export default function ReportIssueScreen({ navigation }: any) {
     // AI description generation
     const [aiGenerating, setAiGenerating] = useState(false);
 
+    // AI category detection
+    const [aiDetecting, setAiDetecting] = useState(false);
+    const [detectionResult, setDetectionResult] = useState<DetectionResult | null>(null);
+
     useEffect(() => {
         (async () => {
             let { status } = await Location.requestForegroundPermissionsAsync();
@@ -71,6 +76,36 @@ export default function ReportIssueScreen({ navigation }: any) {
             setLocation(loc);
         })();
     }, []);
+
+    /** Runs AI category detection on the captured image */
+    const runCategoryDetection = async (uri: string) => {
+        setAiDetecting(true);
+        setDetectionResult(null);
+        try {
+            const result = await detectImageCategory(uri);
+            setDetectionResult(result);
+            setCategory(result.category);
+            Toast.show({
+                type: 'success',
+                text1: `Detected: ${result.category}`,
+                text2: `${Math.round(result.confidence * 100)}% confidence`,
+                position: 'top',
+                topOffset: 60,
+                visibilityTime: 3000,
+            });
+        } catch (err: any) {
+            console.error('Category detection failed:', err);
+            Toast.show({
+                type: 'info',
+                text1: 'Auto-detection unavailable',
+                text2: 'Please select category manually.',
+                position: 'top',
+                topOffset: 60,
+            });
+        } finally {
+            setAiDetecting(false);
+        }
+    };
 
     /** Sends current description text to Gemini and replaces it with AI output */
     const handleGenerateWithAI = async () => {
@@ -124,13 +159,22 @@ export default function ReportIssueScreen({ navigation }: any) {
                     const asset = await MediaLibrary.createAssetAsync(photo.uri);
                     setImageUri(asset.uri);
                     setIsCameraActive(false);
-                    Alert.alert('Success', 'Image saved to gallery temporarily.');
+
+                    // Trigger AI category detection using the original temp file
+                    // (media library URIs may not be readable by FileSystem)
+                    runCategoryDetection(photo.uri);
                 }
             } catch (err) {
                 console.error(err);
                 Alert.alert('Error', 'Failed to capture photo.');
             }
         }
+    };
+
+    const handleRetakePhoto = () => {
+        setImageUri(null);
+        setDetectionResult(null);
+        setAiDetecting(false);
     };
 
     const handleCopyLocation = async () => {
@@ -210,6 +254,7 @@ export default function ReportIssueScreen({ navigation }: any) {
             setImageUri(null);
             setDescription('');
             setCategory(CATEGORIES[0]);
+            setDetectionResult(null);
 
             // Open email app with professional complaint format, then navigate
             await openCivicEmail(emailParams);
@@ -257,9 +302,18 @@ export default function ReportIssueScreen({ navigation }: any) {
                 {imageUri ? (
                     <View style={styles.imagePreviewContainer}>
                         <Image source={{ uri: imageUri }} style={styles.imagePreview} />
+
+                        {/* AI Analyzing Overlay */}
+                        {aiDetecting && (
+                            <View style={styles.analyzingOverlay}>
+                                <ActivityIndicator size="small" color="#FFF" />
+                                <Text style={styles.analyzingText}>Analyzing Image...</Text>
+                            </View>
+                        )}
+
                         <TouchableOpacity
                             style={styles.retakeButton}
-                            onPress={() => setImageUri(null)}
+                            onPress={handleRetakePhoto}
                         >
                             <Text style={styles.retakeText}>Retake Photo</Text>
                         </TouchableOpacity>
@@ -272,17 +326,57 @@ export default function ReportIssueScreen({ navigation }: any) {
                     </TouchableOpacity>
                 )}
 
+                {/* AI Detection Result Banner */}
+                {detectionResult && !aiDetecting && (
+                    <View style={styles.detectionBanner}>
+                        <View style={styles.detectionIconRow}>
+                            <Ionicons name="sparkles" size={18} color="#F97316" />
+                            <Text style={styles.detectionLabel}>AI Detected</Text>
+                        </View>
+                        <Text style={styles.detectionCategory}>
+                            {detectionResult.category}
+                        </Text>
+                        <View style={styles.confidenceBarContainer}>
+                            <View
+                                style={[
+                                    styles.confidenceBarFill,
+                                    { width: `${Math.round(detectionResult.confidence * 100)}%` },
+                                ]}
+                            />
+                        </View>
+                        <Text style={styles.confidenceText}>
+                            {Math.round(detectionResult.confidence * 100)}% confidence
+                        </Text>
+                        <Text style={styles.detectionHint}>
+                            You can change the category below if needed
+                        </Text>
+                    </View>
+                )}
+
                 <Text style={styles.sectionTitle}>2. Issue Category</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
                     {CATEGORIES.map((cat) => (
                         <TouchableOpacity
                             key={cat}
-                            style={[styles.categoryPill, category === cat && styles.categoryPillActive]}
+                            style={[
+                                styles.categoryPill,
+                                category === cat && styles.categoryPillActive,
+                                // Highlight AI-detected category with a subtle glow
+                                detectionResult?.category === cat && category === cat && styles.categoryPillAiDetected,
+                            ]}
                             onPress={() => setCategory(cat)}
                         >
                             <Text style={[styles.categoryText, category === cat && styles.categoryTextActive]}>
-                                {cat}
+                                {detectionResult?.category === cat ? `${cat}` : cat}
                             </Text>
+                            {detectionResult?.category === cat && (
+                                <Ionicons
+                                    name="sparkles"
+                                    size={12}
+                                    color={category === cat ? '#C2410C' : '#9CA3AF'}
+                                    style={{ marginLeft: 4 }}
+                                />
+                            )}
                         </TouchableOpacity>
                     ))}
                 </ScrollView>
@@ -442,6 +536,76 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: 'bold',
     },
+    // ── Analyzing Overlay ────────────────────────────────────────────────────────
+    analyzingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 10,
+    },
+    analyzingText: {
+        color: '#FFF',
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    // ── Detection Result Banner ──────────────────────────────────────────────────
+    detectionBanner: {
+        marginTop: 12,
+        backgroundColor: '#FEF3EB',
+        borderWidth: 1,
+        borderColor: '#FDBA74',
+        borderRadius: 12,
+        padding: 14,
+    },
+    detectionIconRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 4,
+    },
+    detectionLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#9A3412',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    detectionCategory: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: '#C2410C',
+        marginBottom: 8,
+    },
+    confidenceBarContainer: {
+        height: 6,
+        backgroundColor: '#FED7AA',
+        borderRadius: 3,
+        overflow: 'hidden',
+        marginBottom: 6,
+    },
+    confidenceBarFill: {
+        height: '100%',
+        backgroundColor: '#F97316',
+        borderRadius: 3,
+    },
+    confidenceText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#C2410C',
+    },
+    detectionHint: {
+        fontSize: 11,
+        color: '#9A3412',
+        marginTop: 4,
+        fontStyle: 'italic',
+    },
+    // ── Camera ───────────────────────────────────────────────────────────────────
     cameraContainer: {
         flex: 1,
     },
@@ -478,11 +642,14 @@ const styles = StyleSheet.create({
         borderRadius: 27,
         backgroundColor: '#FFF',
     },
+    // ── Category Pills ───────────────────────────────────────────────────────────
     categoryScroll: {
         flexDirection: 'row',
         marginBottom: 8,
     },
     categoryPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
         paddingHorizontal: 16,
         paddingVertical: 8,
         borderRadius: 20,
@@ -495,6 +662,10 @@ const styles = StyleSheet.create({
         backgroundColor: '#FEF3EB',
         borderColor: '#F97316',
     },
+    categoryPillAiDetected: {
+        borderWidth: 2,
+        borderColor: '#F97316',
+    },
     categoryText: {
         color: '#4B5563',
         fontWeight: '600',
@@ -502,6 +673,7 @@ const styles = StyleSheet.create({
     categoryTextActive: {
         color: '#C2410C',
     },
+    // ── Location ─────────────────────────────────────────────────────────────────
     locationCard: {
         backgroundColor: '#FFF',
         borderRadius: 12,
