@@ -5,7 +5,7 @@
 //    Keep this key private – never share it publicly.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const GEMINI_API_KEY = 'AIzaSyAa1KlbWrjgpYhkRmFRAuX0DzfG7E2z9Ck';
+const GEMINI_API_KEY = 'AIzaSyBlGItCpzFWadBPxhKKWWd0mG56zfRbs0o';
 
 const GEMINI_MODEL = 'gemini-2.0-flash';
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;

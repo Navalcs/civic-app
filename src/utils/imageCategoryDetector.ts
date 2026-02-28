@@ -5,9 +5,9 @@
 // predict the civic issue category automatically.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { File } from 'expo-file-system';
+import { readAsStringAsync, EncodingType } from 'expo-file-system/legacy';
 
-const GEMINI_API_KEY = 'AIzaSyAa1KlbWrjgpYhkRmFRAuX0DzfG7E2z9Ck';
+const GEMINI_API_KEY = 'AIzaSyBlGItCpzFWadBPxhKKWWd0mG56zfRbs0o';
 
 const GEMINI_MODEL = 'gemini-2.0-flash';
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
@@ -122,9 +122,10 @@ Where confidence is a decimal between 0.0 and 1.0 representing how confident you
 export async function detectImageCategory(
     imageUri: string,
 ): Promise<DetectionResult> {
-    // Read image as base64 using the new expo-file-system File API
-    const file = new File(imageUri);
-    const base64 = await file.base64();
+    // Read image as base64
+    const base64 = await readAsStringAsync(imageUri, {
+        encoding: EncodingType.Base64,
+    });
 
     // Determine MIME type from extension
     const extension = imageUri.split('.').pop()?.toLowerCase();

@@ -382,7 +382,6 @@ export default function ReportIssueScreen({ navigation }: any) {
                 </ScrollView>
 
                 <Text style={styles.sectionTitle}>3. Location</Text>
-                <Text style={styles.sectionTitle}>3. Location Requirements</Text>
                 <View style={styles.locationCard}>
                     {location ? (
                         <View style={styles.coordsDisplayContainer}>
